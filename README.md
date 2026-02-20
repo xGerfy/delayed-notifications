@@ -73,16 +73,19 @@ curl -X DELETE http://localhost:8080/notify/{id}
 ## Структура проекта
 
 ```bash
-simpleApiChat/
+delayed-notifications/
 ├── cmd/
-│    └── main.go         # Точка входа приложения
+│    └── main.go           # Точка входа приложения
 ├── internal/
-│    ├── config/         # Конфигурация
-│    ├── entities/       # Модели данных
-│    ├── rabbit/         # Слой работы с брокером сообщений (rabbitmq)
-│    ├── repo/           # Слой работы с БД (redis)
-│    ├── router/         # HTTP обработчики
-│    └── service/        # Бизнес-логика
-├── go.mod               # Зависимости Go
-└── README.md            # Этот файл
+│    ├── config/           # Конфигурация
+│    ├── entities/         # Модели данных
+│    ├── rabbit/           # Слой работы с брокером сообщений (rabbitmq)
+│    │     ├── consumer    # Обработчик входящих сообщений
+│    │     └── publisher   # Обработчик исходящих сообщений
+│    ├── repo/             # Слой работы с БД (redis)
+│    ├── router/           # Роутер
+│    │     └── handler     # HTTP обработчики
+│    └── service/          # Бизнес-логика
+├── go.mod                 # Зависимости Go
+└── README.md              # Этот файл
 ```
