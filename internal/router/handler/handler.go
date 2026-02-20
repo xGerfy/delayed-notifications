@@ -4,13 +4,15 @@ import (
 	"context"
 	"delayed/internal/entities"
 	"net/http"
+	"time"
 
 	"github.com/wb-go/wbf/ginext"
 )
 
 type Service interface {
-	Create(ctx context.Context, message string) (*entities.Notification, error)
+	Create(ctx context.Context, message string, sendAt time.Time) (*entities.Notification, error)
 	Get(ctx context.Context, id string) (*entities.Notification, error)
+	Delete(ctx context.Context, id string) error
 }
 
 type notificanionHandler struct {
@@ -22,7 +24,8 @@ func New(service Service) *notificanionHandler {
 }
 
 type CreateNotificationRequest struct {
-	Message string `json:"message" binding:"required"`
+	Message string    `json:"message" binding:"required"`
+	SendAt  time.Time `json:"send_at"`
 }
 
 func (h notificanionHandler) CreateNotification(ctx *ginext.Context) {
@@ -32,7 +35,7 @@ func (h notificanionHandler) CreateNotification(ctx *ginext.Context) {
 		return
 	}
 
-	n, err := h.service.Create(ctx.Request.Context(), req.Message)
+	n, err := h.service.Create(ctx.Request.Context(), req.Message, req.SendAt)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, ginext.H{"error": err.Error()})
 		return
@@ -51,4 +54,15 @@ func (h notificanionHandler) GetNotificationStatus(ctx *ginext.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, n)
+}
+
+func (h notificanionHandler) DeleteNotification(ctx *ginext.Context) {
+	id := ctx.Param("id")
+
+	if err := h.service.Delete(ctx, id); err != nil {
+		ctx.JSON(http.StatusBadRequest, ginext.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusNoContent, nil)
 }

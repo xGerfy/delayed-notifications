@@ -2,8 +2,9 @@ package publisher
 
 import (
 	"context"
-	"delayed/internal/entities"
+	"delayed/internal/config"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/rabbitmq/amqp091-go"
@@ -14,18 +15,16 @@ import (
 type publisher struct {
 	client *rabbitmq.RabbitClient
 	pub    *rabbitmq.Publisher
+	cfgApp *config.AppConfig
 }
 
-var (
-	exchange = "delayed_exchange"
-	queue    = "notifications_queue"
-)
+type message struct {
+	ID string
+}
 
-func New(url string) (*publisher, error) {
+func New(cfgApp *config.AppConfig) (*publisher, error) {
 	cfg := rabbitmq.ClientConfig{
-		URL:            url,
-		ConnectTimeout: 0,
-		Heartbeat:      0,
+		URL: cfgApp.RabbitConfig.Url,
 		ReconnectStrat: retry.Strategy{
 			Attempts: 3,
 			Delay:    5,
@@ -36,20 +35,15 @@ func New(url string) (*publisher, error) {
 			Delay:    5,
 			Backoff:  1,
 		},
-		ConsumingStrat: retry.Strategy{
-			Attempts: 3,
-			Delay:    5,
-			Backoff:  1,
-		},
 	}
 
 	client, err := rabbitmq.NewClient(cfg)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create rabbitmq client: %w", err)
 	}
 
 	err = client.DeclareExchange(
-		exchange,
+		cfgApp.RabbitConfig.Exchange,
 		"x-delayed-message",
 		true,
 		true,
@@ -57,49 +51,43 @@ func New(url string) (*publisher, error) {
 		amqp091.Table{"x-delayed-type": "direct"},
 	)
 	if err != nil {
-		client.Close()
-		return nil, err
+		return nil, fmt.Errorf("failed to declare exchenge: %w", err)
 	}
 
 	err = client.DeclareQueue(
-		queue,
-		exchange,
-		queue,
+		cfgApp.RabbitConfig.Queue,
+		cfgApp.RabbitConfig.Exchange,
+		cfgApp.RabbitConfig.Queue,
 		true,
 		false,
 		false,
 		nil,
 	)
 	if err != nil {
-		client.Close()
-		return nil, err
+		return nil, fmt.Errorf("failed to declare queue: %w", err)
 	}
 
-	pub := rabbitmq.NewPublisher(client, exchange, "application/json")
+	pub := rabbitmq.NewPublisher(client, cfgApp.RabbitConfig.Exchange, "application/json")
 
 	return &publisher{
 		client: client,
 		pub:    pub,
+		cfgApp: cfgApp,
 	}, nil
 }
 
-type msg struct {
-	ID string
-}
+func (p *publisher) PublishWithDelay(ctx context.Context, id string, delay time.Duration) error {
+	msg := message{ID: id}
 
-func (p *publisher) PublishWithDelay(ctx context.Context, msg entities.NotificationQueueMsg, delay time.Duration) error {
 	body, err := json.Marshal(msg)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to marshal message: %w", err)
 	}
 
-	opts := []rabbitmq.PublishOption{
-		rabbitmq.WithHeaders(amqp091.Table{
-			"x-delay": int(delay.Milliseconds()),
-		}),
-	}
+	delayMs := delay.Milliseconds()
+	headers := amqp091.Table{"x-delay": delayMs}
 
-	return p.pub.Publish(ctx, body, queue, opts...)
+	return p.pub.Publish(ctx, body, p.cfgApp.RabbitConfig.Queue, rabbitmq.WithHeaders(headers))
 }
 
 func (p *publisher) Close() error {
